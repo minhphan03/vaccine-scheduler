@@ -13,15 +13,44 @@ Note: it is always true that at most one of currentCaregiver and currentPatient 
         since only one user can be logged-in at a time
 '''
 current_patient = None
-
 current_caregiver = None
 
 
 def create_patient(tokens):
     """
-    TODO: Part 1
+    creates a new patient object and put details
+    into the database
     """
-    pass
+    if len(tokens) != 3:
+        print("Failed to create user.")
+        return
+    
+    username = tokens[1]
+    password = tokens[2]
+
+    # check username 
+    if username_exists("patients", username):
+        print("Username taken, try again!")
+        return
+    
+    salt = Util.generate_salt()
+    hash = Util.generate_hash(password, salt)
+
+    # create Patient
+    patient = Patient(username, salt=salt, hash=hash)
+
+    # try saving Patient
+    try:
+        patient.save_to_db()
+    except pymssql.Error as e:
+        print("Failed to create user.")
+        print("Db-Error:", e)
+        quit()
+    except Exception as e:
+        print("Failed to create user.")
+        print(e)
+        return
+    print("Created user ", username)
 
 
 def create_caregiver(tokens):
@@ -34,7 +63,7 @@ def create_caregiver(tokens):
     username = tokens[1]
     password = tokens[2]
     # check 2: check if the username has been taken already
-    if username_exists_caregiver(username):
+    if username_exists("caregivers", username):
         print("Username taken, try again!")
         return
 
@@ -58,11 +87,15 @@ def create_caregiver(tokens):
     print("Created user ", username)
 
 
-def username_exists_caregiver(username):
+def username_exists(table: str, username: str):
     cm = ConnectionManager()
     conn = cm.create_connection()
 
-    select_username = "SELECT * FROM Caregivers WHERE Username = %s"
+    select_username = ""
+    if table == "caregivers":
+        select_username = "SELECT * FROM Caregivers WHERE Username = %s"
+    if table =="patients":
+        select_username = "SELECT * FROM Patients WHERE Username = %s"
     try:
         cursor = conn.cursor(as_dict=True)
         cursor.execute(select_username, username)
@@ -83,9 +116,38 @@ def username_exists_caregiver(username):
 
 def login_patient(tokens):
     """
-    TODO: Part 1
+    gives patient access to perform actions
     """
-    pass
+    global current_patient
+    if current_patient is not None or current_caregiver is not None:
+        print("User already logged in.")
+        return
+    
+    if len(tokens) != 3:
+        print("Login failed.")
+        return
+
+    username = tokens[1]
+    password = tokens[2]
+
+    # verify if patient exists in database
+    patient = None
+    try:
+        patient = Patient(username=username, password=password).get()
+    except pymssql.Error as e:
+        print("Login failed.")
+        print("Db-Error:", e)
+        quit()
+    except Exception as e:
+        print("Login failed.")
+        print("Error:", e)
+        return
+
+    if patient is None:
+        print("Login failed.")
+    else:
+        print("Logged in as: " + username)
+        current_patient = patient       
 
 
 def login_caregiver(tokens):
