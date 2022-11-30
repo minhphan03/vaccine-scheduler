@@ -3,6 +3,7 @@ sys.path.append("../util/*")
 sys.path.append("../db/*")
 from util.Util import Util
 from db.ConnectionManager import ConnectionManager
+import Vaccine
 import pymssql
 
 class Patient:
@@ -63,3 +64,55 @@ class Patient:
             raise e
         finally:
             cm.close_connection()
+    
+    def reserve(self, d, vaccine_name):
+        cm = ConnectionManager()
+        conn = cm.create_connection()
+        cursor = conn.cursor(as_dict=True)
+
+        caregiver = ''
+
+        get_availability = "SELECT TOP 1 AV.Username \
+                            FROM Availabilities AV LEFT JOIN Appointments AP \
+                            ON AV.Time = AP.Time AND AV.Username = AP.CaregiverID\
+                            WHERE Time=%s AND AP.AppointmentID IS NULL \
+                            ORDER BY AV.Username"
+        make_appointment = "INSERT INTO APPOINTMENTS VALUES (%s, %s, %s, %s)"
+        get_reservationID = "SELECT AppointmentID FROM Appointments WHERE CaregiverID = %s AND Time = %s"
+        update_dose = "UPDATE Vaccines SET "
+
+        # check number of doses
+        try:
+            vaccine = Vaccine(vaccine_name, -1).get()
+            dose = int(vaccine.get_available_doses())
+            if dose == 0:
+                print("No dose available for your vaccine")
+                return
+            
+            # check schedule
+            cursor.execute(get_availability, d)
+            if cursor.row_count > 0:
+                for row in cursor:
+                    caregiver = str(row['Username'])
+            else:
+                print('No date available')
+                return
+            
+            # add appointment
+            cursor.execute(make_appointment, (str(d), caregiver, self.get_username, vaccine))
+            
+            # print appointment id
+            cursor.execute(get_reservationID, (caregiver, str(d)))
+            for row in cursor:
+                print("Your appointmentID is " + row['AppointmentID'])
+            conn.commit()
+        except pymssql.Error:
+            raise
+        finally:
+            cm.close_connection()
+        
+        # decrease dose by 1
+        vaccine.decrease_available_doses(1)
+
+        
+        
